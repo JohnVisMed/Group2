@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Unity WebGL Player | WetlandWebURP</title>
+    <script src="Build/qr-scanner.umd.min.js"></script>
+    <style>
+      /* Landscape overlay — shown whenever device is in landscape */
+      #landscapeOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: #000;
+        color: #fff;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        font-family: sans-serif;
+        text-align: center;
+        padding: 32px;
+      }
+
+      #landscapeOverlay svg {
+        width: 72px;
+        height: 72px;
+        animation: rotateHint 2s ease-in-out infinite;
+      }
+
+      @keyframes rotateHint {
+        0%   { transform: rotate(0deg);   }
+        40%  { transform: rotate(-90deg); }
+        60%  { transform: rotate(-90deg); }
+        100% { transform: rotate(0deg);   }
+      }
+
+      #landscapeOverlay p {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.5;
+        opacity: 0.85;
+      }
+
+      /* Force portrait via CSS as an extra hint to the browser */
+      @media screen and (orientation: landscape) {
+        #landscapeOverlay { display: flex; }
+      }
+    </style>
+  </head>
+  <body style="text-align: center; padding: 0; border: 0; margin: 0;">
+
+    <!-- Landscape rotation overlay -->
+    <div id="landscapeOverlay">
+      <!-- Phone-rotate icon -->
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="20" y="8" width="24" height="40" rx="4" stroke="white" stroke-width="3"/>
+        <line x1="20" y1="16" x2="44" y2="16" stroke="white" stroke-width="2"/>
+        <line x1="20" y1="40" x2="44" y2="40" stroke="white" stroke-width="2"/>
+        <circle cx="32" cy="44" r="2" fill="white"/>
+        <!-- Arrow arc hinting rotation -->
+        <path d="M50 20 A20 20 0 0 1 44 50" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <polyline points="40,48 44,52 48,48" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <p>Please rotate your device<br>to <strong>portrait mode</strong> to play.</p>
+    </div>
+
+    <canvas id="unity-canvas" width=100% height=100% tabindex="-1" style="width: 100%; height: 100%; background: #000000"></canvas>
+
+    <div id="qrPreviewContainer" style="
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      height: 300px;
+      display: none;
+      z-index: 9999;
+    ">
+      <video id="qrPreview" autoplay playsinline style="
+        width: 100%;
+        height: 100%;
+        background: #000;
+        border-radius: 10px;
+        display: block;
+      "></video>
+
+      <button id="qrCloseBtn" onclick="stopCameraPreview()" style="
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 32px;
+        height: 32px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 2px solid rgba(255, 255, 255, 0.8);
+        border-radius: 50%;
+        color: #fff;
+        font-size: 16px;
+        font-weight: bold;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      ">&#x2715;</button>
+    </div>
+
+    <script src="Build/Build.loader.js"></script>
+    <script>
+      // ── Portrait lock ────────────────────────────────────────────────────────
+      // Try the Orientation API first (works on Android Chrome & most WebViews).
+      // iOS Safari doesn't support lock(), so the CSS overlay acts as the fallback.
+      function tryLockPortrait() {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock("portrait").catch(() => {
+            // Silently ignored — CSS overlay handles it.
+          });
+        }
+      }
+
+      // Re-evaluate overlay visibility on every orientation change.
+      // (The CSS @media rule already does this visually, but we also
+      //  manage it via JS so Unity input is blocked in landscape.)
+      function handleOrientationChange() {
+        const overlay = document.getElementById("landscapeOverlay");
+        const isLandscape =
+          (screen.orientation && screen.orientation.type
+            ? screen.orientation.type.startsWith("landscape")
+            : window.innerWidth > window.innerHeight);
+
+        overlay.style.display = isLandscape ? "flex" : "none";
+      }
+
+      if (screen.orientation) {
+        screen.orientation.addEventListener("change", handleOrientationChange);
+      } else {
+        window.addEventListener("orientationchange", handleOrientationChange);
+      }
+      window.addEventListener("resize", handleOrientationChange);
+
+      // Call once on load.
+      handleOrientationChange();
+
+      // ── Mobile / desktop setup ───────────────────────────────────────────────
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+
+        var canvas = document.querySelector("#unity-canvas");
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        // canvas.style.width = "1080px";
+        // canvas.style.height = "1920px";
+        canvas.style.position = "fixed";
+
+        document.body.style.textAlign = "left";
+
+        // Attempt orientation lock on first touch (required by some browsers).
+        document.addEventListener("touchstart", tryLockPortrait, { once: true });
+        tryLockPortrait();
+      } else {
+        document.body.innerHTML = "<h2 style='text-align:center;margin-top:40px;'>This game is only available on mobile devices.</h2>";
+      }
+
+      // ── Unity ────────────────────────────────────────────────────────────────
+      createUnityInstance(document.querySelector("#unity-canvas"), {
+        dataUrl: "Build/Build.data.unityweb",
+        frameworkUrl: "Build/Build.framework.js.unityweb",
+        codeUrl: "Build/Build.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "DefaultCompany",
+        productName: "WetlandWebURP",
+        productVersion: "1.0",
+      }).then((unityInstance) => {
+        window.unityInstance = unityInstance;
+      }).catch((message) => {
+        alert(message);
+      });
+
+      // ── QR Scanner ───────────────────────────────────────────────────────────
+      let stream = null;
+      let qrScanner = null;
+
+      function startCameraPreview() {
+        const video = document.getElementById("qrPreview");
+        const container = document.getElementById("qrPreviewContainer");
+
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1920 } }
+        })
+          .then(s => {
+            stream = s;
+            video.srcObject = stream;
+            container.style.display = "block";
+
+            video.onloadedmetadata = () => {
+              video.play();
+
+              if (!qrScanner) {
+                qrScanner = new QrScanner(
+                  video,
+                  result => {
+                    console.log("QR result:", result.data);
+                    if (window.unityInstance) {
+                      stopCameraPreview();
+                      window.unityInstance.SendMessage("QRManager", "OnQRScanned", result.data);
+                    }
+                  },
+                  {
+                    highlightScanRegion: false,
+                    highlightCodeOutline: true
+                  }
+                );
+              }
+
+              qrScanner.start().catch(err => {
+                console.error("QR scanner start error:", err);
+              });
+            };
+          })
+          .catch(err => {
+            console.error("Camera error:", err);
+          });
+      }
+
+      function stopCameraPreview() {
+        const container = document.getElementById("qrPreviewContainer");
+        container.style.display = "none";
+
+        if (qrScanner) {
+          qrScanner.stop();
+        }
+
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
+        }
+      }
+    </script>
+  </body>
+</html>
